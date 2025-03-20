@@ -1,4 +1,4 @@
-defmodule Parser do
+defmodule ExLisp.Parser do
   @moduledoc """
   * Lisp Expression: Either an atom or a list
   * Lisp Atom: Simple value (number, symbol)
@@ -13,6 +13,16 @@ defmodule Parser do
   @spec parse_token(String.t()) :: token()
   @doc """
   Converts a string token into its corresponding Elixir value
+  ## Examples
+
+      iex> ExLisp.Parser.parse_token("42")
+      42
+
+      iex> ExLisp.Parser.parse_token("+")
+      :+
+
+      iex> ExLisp.Parser.parse_token("3.14")
+      3.14
   """
   def parse_token(token) when is_binary(token) do
     cond do
