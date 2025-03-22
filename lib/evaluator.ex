@@ -6,6 +6,7 @@ defmodule ExLisp.Evaluator do
   within an environment of defined variables and functions.
   """
   alias ExLisp.Parser
+  alias ExLisp.Lambda
 
   @type env :: %{required(String.t()) => any()}
   @type expression :: Parser.expression()
@@ -44,13 +45,50 @@ defmodule ExLisp.Evaluator do
   # Variable lookup
   def eval(var, env) when is_binary(var), do: eval_variable(var, env)
 
-  # Dispatcher for different expression types
+  # Special forms
+  def eval([:if | args], env), do: eval_if(args, env)
+  def eval([:define | args], env), do: eval_define(args, env)
+
+  def eval([func_name | args], env) when is_binary(func_name) do
+    case Map.fetch(env, func_name) do
+      {:ok, %Lambda{} = lambda} ->
+        eval([lambda | args], env)
+
+      {:ok, _} ->
+        raise "#{func_name} is not a function"
+
+      :error ->
+        raise "Undefined function: #{func_name}"
+    end
+  end
+
+  # Lambda definition
+  def eval([:lambda, params, body], env) when is_list(params) do
+    lambda = %Lambda{
+      params: params,
+      body: body,
+      env: env
+    }
+
+    {lambda, env}
+  end
+
+  def eval([[:lambda | _] = lambda_expr | args], env) do
+    {lambda, lambda_env} = eval(lambda_expr, env)
+    eval([lambda | args], lambda_env)
+  end
+
+  # Lambda application
+  def eval([%Lambda{} = lambda | args], env) do
+    apply_lambda(lambda, args, env)
+  end
+
+  # Operation dispatchers
   def eval([op | args], env) when op in [:+, :-, :*, :/, :mod, :rem],
     do: eval_arithmetic(op, args, env)
 
-  def eval([op | args], env) when op in [:and, :or, :not], do: eval_logical(op, args, env)
-
-  def eval([:if | args], env), do: eval_if(args, env)
+  def eval([op | args], env) when op in [:and, :or, :not],
+    do: eval_logical(op, args, env)
 
   # Catch-all for unhandled expressions
   def eval(expr, _env), do: raise("Unrecognized expression: #{inspect(expr)}")
@@ -80,14 +118,12 @@ defmodule ExLisp.Evaluator do
   end
 
   defp apply_arithmetic(:+, args), do: Enum.sum(args)
-
   defp apply_arithmetic(:-, [x]), do: -x
 
   defp apply_arithmetic(:-, [x, y | rest]),
     do: Enum.reduce(rest, x - y, fn val, acc -> acc - val end)
 
   defp apply_arithmetic(:*, args), do: Enum.reduce(args, 1, &(&1 * &2))
-
   defp apply_arithmetic(:/, [_, 0 | _]), do: raise("Division by zero")
 
   defp apply_arithmetic(:/, [x, y | rest]),
@@ -95,7 +131,6 @@ defmodule ExLisp.Evaluator do
 
   defp apply_arithmetic(:mod, [x, y]), do: Integer.mod(x, y)
   defp apply_arithmetic(:mod, _), do: raise("mod requires exactly 2 arguments")
-
   defp apply_arithmetic(:rem, [x, y]), do: rem(x, y)
   defp apply_arithmetic(:rem, _), do: raise("rem requires exactly 2 arguments")
 
@@ -141,7 +176,7 @@ defmodule ExLisp.Evaluator do
   end
 
   #
-  # Special forms
+  # If special form
   #
 
   # If with explicit else branch
@@ -171,15 +206,72 @@ defmodule ExLisp.Evaluator do
     do: raise("Invalid 'if' form, expected 2-3 arguments, got: #{length(args)}")
 
   #
+  # Define special form
+  #
+
+  # Variable binding
+  defp eval_define([symbol, expr], env) when is_binary(symbol) do
+    {expr_val, new_env} = eval(expr, env)
+    new_env = Map.put(new_env, symbol, expr_val)
+    {symbol, new_env}
+  end
+
+  # Function definition
+  # (define (name param1 param2 ...) body)
+  defp eval_define([[name | params], body], env) when is_binary(name) do
+    lambda = %Lambda{
+      params: params,
+      body: body,
+      env: env
+    }
+
+    new_env = Map.put(env, name, lambda)
+    {name, new_env}
+  end
+
+  # Invalid define form
+  defp eval_define(args, _env),
+    do: raise("Invalid 'define' form: #{inspect(args)}")
+
+  #
+  # Lambda application
+  #
+
+  defp apply_lambda(%Lambda{params: params, body: body, env: lambda_env}, args, call_env) do
+    # Evaluate the arguments in the caller's environment
+    {evaluated_args, _} = eval_args(args, call_env)
+
+    # Check argument count
+    if length(params) != length(evaluated_args) do
+      raise "Expected #{length(params)} arguments, got #{length(evaluated_args)}"
+    end
+
+    # Create lexical environment for function execution
+    param_bindings = Enum.zip(params, evaluated_args) |> Map.new()
+    extended_env = Map.merge(lambda_env, param_bindings)
+
+    # Evaluate the body in the extended environment
+    {result, _} = eval(body, extended_env)
+
+    # Return the result but preserve the caller's environment
+    {result, call_env}
+  end
+
+  #
   # Helpers
   #
 
   @doc false
   defp eval_args(args, env) do
-    Enum.reduce(args, {[], env}, fn arg, {acc, current_env} ->
-      {value, updated_env} = eval(arg, current_env)
-      {acc ++ [value], updated_env}
-    end)
+    # More efficient implementation using an accumulator
+    eval_args_acc(args, env, [])
+  end
+
+  defp eval_args_acc([], env, acc), do: {Enum.reverse(acc), env}
+
+  defp eval_args_acc([arg | rest], env, acc) do
+    {value, new_env} = eval(arg, env)
+    eval_args_acc(rest, new_env, [value | acc])
   end
 
   # Helper to convert any value to a boolean based on Lisp truthiness rules
