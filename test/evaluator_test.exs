@@ -208,6 +208,56 @@ defmodule ExLisp.EvaluatorTest do
     end
   end
 
+  describe "list operations" do
+    test "list" do
+      assert {[], %{}} == parse_eval("(list)")
+      assert {[1, 2, 3], %{}} == parse_eval("(list 1 2 3)")
+      assert {[1, [2, 3]], %{}} == parse_eval("(list 1 (list 2 3))")
+    end
+
+    test "car" do
+      assert {1, %{}} == parse_eval("(car (list 1 2 3))")
+      assert {1, %{}} == parse_eval("(car (cons 1 (list 2 3)))")
+
+      assert_raise RuntimeError, ~r/car: cannot take car of empty list/, fn ->
+        parse_eval("(car (list))")
+      end
+
+      assert_raise RuntimeError, ~r/car requires a list argument/, fn ->
+        parse_eval("(car 42)")
+      end
+    end
+
+    test "cdr" do
+      assert {[2, 3], %{}} == parse_eval("(cdr (list 1 2 3))")
+      assert {[], %{}} == parse_eval("(cdr (list 1))")
+
+      assert_raise RuntimeError, ~r/cdr: cannot take cdr of empty list/, fn ->
+        parse_eval("(cdr (list))")
+      end
+
+      assert_raise RuntimeError, ~r/cdr requires a list argument/, fn ->
+        parse_eval("(cdr 42)")
+      end
+    end
+
+    test "cons" do
+      assert {[1, 2, 3], %{}} == parse_eval("(cons 1 (list 2 3))")
+      assert {[1], %{}} == parse_eval("(cons 1 (list))")
+      assert {[[1, 2], 3, 4], %{}} == parse_eval("(cons (list 1 2) (list 3 4))")
+
+      assert_raise RuntimeError, ~r/cons: second argument must be a list/, fn ->
+        parse_eval("(cons 1 2)")
+      end
+    end
+
+    test "nested list operations" do
+      assert {2, %{}} == parse_eval("(car (cdr (list 1 2 3)))")
+      assert {[2], %{}} == parse_eval("(cons 2 (list))")
+      assert {[1, 2, 3, 4], %{}} == parse_eval("(cons 1 (cons 2 (cons 3 (cons 4 (list)))))")
+    end
+  end
+
   describe "lambda and function application" do
     test "create simple lambda" do
       {lambda, _} = parse_eval("(lambda (x) (+ x 1))")

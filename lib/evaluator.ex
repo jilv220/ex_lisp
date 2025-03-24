@@ -96,6 +96,11 @@ defmodule ExLisp.Evaluator do
   def eval([op | args], env) when op in [:and, :or, :not],
     do: eval_logical(op, args, env)
 
+  def eval([:car | args], env), do: eval_car(args, env)
+  def eval([:cdr | args], env), do: eval_cdr(args, env)
+  def eval([:cons | args], env), do: eval_cons(args, env)
+  def eval([:list | args], env), do: eval_list(args, env)
+
   # Catch-all for unhandled expressions
   def eval(expr, _env), do: raise("Unrecognized expression: #{inspect(expr)}")
 
@@ -326,6 +331,58 @@ defmodule ExLisp.Evaluator do
 
     # Return the result but preserve the caller's environment
     {result, call_env}
+  end
+
+  #
+  # List
+  #
+
+  defp eval_car([list_expr], env) do
+    {list_val, new_env} = eval(list_expr, env)
+
+    if !is_list(list_val), do: raise("car requires a list argument, got:#{inspect(list_val)}")
+    if list_val == [], do: raise("car: cannot take car of empty list")
+
+    [hd | _] = list_val
+    {hd, new_env}
+  end
+
+  defp eval_car(args, _env) do
+    raise "car requires exactly 1 argument, got #{length(args)}"
+  end
+
+  defp eval_cdr([list_expr], env) do
+    {list_val, new_env} = eval(list_expr, env)
+
+    if !is_list(list_val), do: raise("cdr requires a list argument, got:#{inspect(list_val)}")
+    if list_val == [], do: raise("cdr: cannot take cdr of empty list")
+
+    [_ | tl] = list_val
+    {tl, new_env}
+  end
+
+  defp eval_cdr(args, _env) do
+    raise "cdr requires exactly 1 argument, got: #{length(args)}"
+  end
+
+  defp eval_cons([head_expr, tail_expr], env) do
+    {head_val, env_after_head} = eval(head_expr, env)
+    {tail_val, env_after_tail} = eval(tail_expr, env_after_head)
+
+    if !is_list(tail_val) do
+      raise "cons: second argument must be a list, got: #{inspect(tail_val)}"
+    end
+
+    {[head_val | tail_val], env_after_tail}
+  end
+
+  defp eval_cons(args, _env) do
+    raise "cons requires exactly 2 arguments, got: #{length(args)}"
+  end
+
+  defp eval_list(args, env) do
+    {evaluated_args, new_env} = eval_args(args, env)
+    {evaluated_args, new_env}
   end
 
   #

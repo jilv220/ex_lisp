@@ -23,3 +23,5 @@ ex_lisp-*.tar
 /tmp/
 
 .elixir_ls
+ex_lisp
+burrito_out
