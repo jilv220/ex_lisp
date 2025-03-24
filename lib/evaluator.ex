@@ -30,6 +30,9 @@ defmodule ExLisp.Evaluator do
       iex> ExLisp.Evaluator.eval([:+, 1, 2], %{})
       {3, %{}}
 
+      iex> ExLisp.Evaluator.eval([:<, 1, 2, 3], %{})
+      {true, %{}}
+
       iex> ExLisp.Evaluator.eval([:and, true, false], %{})
       {false, %{}}
 
@@ -87,6 +90,9 @@ defmodule ExLisp.Evaluator do
   def eval([op | args], env) when op in [:+, :-, :*, :/, :mod, :rem],
     do: eval_arithmetic(op, args, env)
 
+  def eval([op | args], env) when op in [:=, :<, :>, :<=, :>=],
+    do: eval_comparison(op, args, env)
+
   def eval([op | args], env) when op in [:and, :or, :not],
     do: eval_logical(op, args, env)
 
@@ -133,6 +139,57 @@ defmodule ExLisp.Evaluator do
   defp apply_arithmetic(:mod, _), do: raise("mod requires exactly 2 arguments")
   defp apply_arithmetic(:rem, [x, y]), do: rem(x, y)
   defp apply_arithmetic(:rem, _), do: raise("rem requires exactly 2 arguments")
+
+  def eval_comparison(op, args, env) do
+    {evaluated_args, new_env} = eval_args(args, env)
+
+    # Only allow numbers for comparisons
+    unless Enum.all?(evaluated_args, &is_number/1) do
+      raise "All arguments to #{op} must be numbers"
+    end
+
+    result = apply_comparison(op, evaluated_args)
+    {result, new_env}
+  end
+
+  # Less than - checks if elements are in strictly ascending order
+  defp apply_comparison(:<, args) when length(args) >= 2 do
+    args
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.all?(fn [a, b] -> a < b end)
+  end
+
+  # Greater than - checks if elements are in strictly descending order
+  defp apply_comparison(:>, args) when length(args) >= 2 do
+    args
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.all?(fn [a, b] -> a > b end)
+  end
+
+  # Less than or equal - checks if elements are in non-descending order
+  defp apply_comparison(:<=, args) when length(args) >= 2 do
+    args
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.all?(fn [a, b] -> a <= b end)
+  end
+
+  # Greater than or equal - checks if elements are in non-ascending order
+  defp apply_comparison(:>=, args) when length(args) >= 2 do
+    args
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.all?(fn [a, b] -> a >= b end)
+  end
+
+  # Equality - checks if all elements are equal
+  defp apply_comparison(:=, args) when length(args) >= 2 do
+    [first | rest] = args
+    Enum.all?(rest, &(&1 == first))
+  end
+
+  # Error cases for insufficient arguments
+  defp apply_comparison(op, _) do
+    raise "#{op} requires at least 2 arguments"
+  end
 
   #
   # Logical operations
@@ -222,7 +279,8 @@ defmodule ExLisp.Evaluator do
     lambda = %Lambda{
       params: params,
       body: body,
-      env: env
+      env: env,
+      name: name
     }
 
     new_env = Map.put(env, name, lambda)
@@ -237,7 +295,11 @@ defmodule ExLisp.Evaluator do
   # Lambda application
   #
 
-  defp apply_lambda(%Lambda{params: params, body: body, env: lambda_env}, args, call_env) do
+  defp apply_lambda(
+         %Lambda{params: params, body: body, env: lambda_env, name: name} = lambda,
+         args,
+         call_env
+       ) do
     # Evaluate the arguments in the caller's environment
     {evaluated_args, _} = eval_args(args, call_env)
 
@@ -248,7 +310,16 @@ defmodule ExLisp.Evaluator do
 
     # Create lexical environment for function execution
     param_bindings = Enum.zip(params, evaluated_args) |> Map.new()
-    extended_env = Map.merge(lambda_env, param_bindings)
+
+    # For recursive functions, add the lambda to its own environment
+    extended_env =
+      if name do
+        Map.put(lambda_env, name, lambda)
+      else
+        lambda_env
+      end
+
+    extended_env = Map.merge(extended_env, param_bindings)
 
     # Evaluate the body in the extended environment
     {result, _} = eval(body, extended_env)

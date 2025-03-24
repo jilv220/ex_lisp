@@ -2,7 +2,7 @@ defmodule ExLisp.Lambda do
   @moduledoc """
   Structure representing a lambda procedure in the Lisp interpreter.
   """
-  defstruct [:params, :body, :env]
+  defstruct [:params, :body, :env, :name]
 
   @type t :: %__MODULE__{
           params: [String.t()],
